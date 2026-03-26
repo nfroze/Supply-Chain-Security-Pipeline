@@ -41,7 +41,7 @@ provider "kubernetes" {
   exec {
     api_version = "client.authentication.k8s.io/v1beta1"
     command     = "aws"
-    args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name]
+    args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name, "--output", "json"]
   }
 }
 
@@ -53,7 +53,7 @@ provider "helm" {
     exec {
       api_version = "client.authentication.k8s.io/v1beta1"
       command     = "aws"
-      args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name]
+      args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name, "--output", "json"]
     }
   }
 }
@@ -113,4 +113,12 @@ module "kyverno" {
   kyverno_irsa_role_arn = module.eks.kyverno_irsa_role_arn
 
   depends_on = [module.eks]
+}
+
+module "github_oidc" {
+  source = "../../modules/github-oidc"
+
+  project_name      = var.project_name
+  environment       = var.environment
+  github_repository = var.github_repository
 }

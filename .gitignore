@@ -9,9 +9,11 @@ override.tf.json
 *_override.tf
 *_override.tf.json
 *.tfplan
+tfplan
 
-# Build brief — never commit
+# Build brief and setup scripts — never commit
 CLAUDE.md
+scripts/
 
 # OS
 .DS_Store

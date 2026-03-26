@@ -57,3 +57,9 @@ variable "kyverno_chart_version" {
   type        = string
   default     = "3.2.6"
 }
+
+variable "github_repository" {
+  description = "GitHub repository in format owner/repo"
+  type        = string
+  default     = "nfroze/Supply-Chain-Security-Pipeline"
+}

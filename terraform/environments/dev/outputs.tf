@@ -53,6 +53,11 @@ output "kyverno_chart_version" {
   value       = module.kyverno.kyverno_chart_version
 }
 
+output "github_actions_role_arn" {
+  description = "IAM role ARN for GitHub Actions — set this as AWS_ROLE_ARN secret in GitHub"
+  value       = module.github_oidc.role_arn
+}
+
 output "kubeconfig_command" {
   description = "Command to update kubeconfig"
   value       = "aws eks update-kubeconfig --region ${var.aws_region} --name ${module.eks.cluster_name}"
