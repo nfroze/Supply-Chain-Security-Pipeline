@@ -41,7 +41,7 @@ spec:
         - imageReferences:
             - "*.dkr.ecr.*.amazonaws.com/supply-chain-sec-*"
           attestations:
-            - type: slsaprovenance
+            - type: https://slsa.dev/provenance/v0.2
               attestors:
                 - entries:
                     - keyless:

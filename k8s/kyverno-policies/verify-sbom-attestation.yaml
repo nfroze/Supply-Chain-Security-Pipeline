@@ -38,7 +38,7 @@ spec:
         - imageReferences:
             - "*.dkr.ecr.*.amazonaws.com/supply-chain-sec-*"
           attestations:
-            - type: cyclonedx
+            - type: https://cyclonedx.org/bom
               attestors:
                 - entries:
                     - keyless:
