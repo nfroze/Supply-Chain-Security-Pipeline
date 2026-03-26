@@ -92,9 +92,10 @@ module "eks" {
   node_desired_size  = var.node_desired_size
   node_min_size      = var.node_min_size
   node_max_size      = var.node_max_size
-  node_instance_types = var.node_instance_types
+  node_instance_types    = var.node_instance_types
+  github_actions_role_arn = module.github_oidc.role_arn
 
-  depends_on = [module.vpc]
+  depends_on = [module.vpc, module.github_oidc]
 }
 
 module "ecr" {

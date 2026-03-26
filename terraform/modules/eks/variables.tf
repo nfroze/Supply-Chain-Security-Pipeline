@@ -42,3 +42,9 @@ variable "node_instance_types" {
   description = "EC2 instance types for worker nodes"
   type        = list(string)
 }
+
+variable "github_actions_role_arn" {
+  description = "IAM role ARN for GitHub Actions (for EKS access entry)"
+  type        = string
+  default     = ""
+}

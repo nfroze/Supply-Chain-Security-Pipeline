@@ -294,3 +294,30 @@ resource "aws_iam_role_policy" "kyverno_ecr" {
 # EKS Access: cluster creator admin permissions are granted via
 # access_config.bootstrap_cluster_creator_admin_permissions = true
 # in the aws_eks_cluster resource above. No separate access entry needed.
+
+# ─────────────────────────────────────────────
+# GitHub Actions EKS Access Entry
+# ─────────────────────────────────────────────
+# Allows the GitHub Actions OIDC role to deploy to the cluster
+
+resource "aws_eks_access_entry" "github_actions" {
+  count = var.github_actions_role_arn != "" ? 1 : 0
+
+  cluster_name  = aws_eks_cluster.main.name
+  principal_arn = var.github_actions_role_arn
+  type          = "STANDARD"
+}
+
+resource "aws_eks_access_policy_association" "github_actions" {
+  count = var.github_actions_role_arn != "" ? 1 : 0
+
+  cluster_name  = aws_eks_cluster.main.name
+  principal_arn = var.github_actions_role_arn
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
+
+  depends_on = [aws_eks_access_entry.github_actions]
+}
