@@ -33,10 +33,10 @@ resource "helm_release" "kyverno" {
 
   values = [
     yamlencode({
-      replicaCount = 3
-
       # IRSA: annotate the admission controller service account for ECR access
       admissionController = {
+        replicas = 3
+
         serviceAccount = {
           annotations = {
             "eks.amazonaws.com/role-arn" = var.kyverno_irsa_role_arn
@@ -73,6 +73,7 @@ resource "helm_release" "kyverno" {
                 }
               ]
             }
+            timeoutSeconds = 30
           }
         ]
       }
