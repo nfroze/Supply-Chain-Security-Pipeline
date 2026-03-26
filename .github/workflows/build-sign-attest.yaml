@@ -48,7 +48,7 @@ jobs:
         id: meta
         run: |
           REGISTRY="${{ steps.login.outputs.registry }}"
-          IMAGE_TAG="${GITHUB_SHA::8}"
+          IMAGE_TAG="${GITHUB_SHA}"
           IMAGE_REF="${REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
           echo "registry=${REGISTRY}" >> "$GITHUB_OUTPUT"
           echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
