@@ -1,0 +1,304 @@
+name: Build, Sign & Attest
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - ".github/workflows/build-sign-attest.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write        # Keyless signing via Sigstore OIDC
+  packages: write        # Push attestations to GHCR (SLSA)
+  attestations: write    # GitHub native attestations
+
+env:
+  AWS_REGION: eu-west-2
+  ECR_REPOSITORY: supply-chain-sec-dev-app
+  IMAGE_NAME: supply-chain-sec-dev-app
+
+jobs:
+  # ─────────────────────────────────────────
+  # Stage 1: Build and push container image
+  # ─────────────────────────────────────────
+  build:
+    name: Build & Push Image
+    runs-on: ubuntu-latest
+    outputs:
+      image_digest: ${{ steps.push.outputs.digest }}
+      image_ref: ${{ steps.meta.outputs.image_ref }}
+      registry: ${{ steps.login.outputs.registry }}
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image metadata
+        id: meta
+        run: |
+          REGISTRY="${{ steps.login.outputs.registry }}"
+          IMAGE_TAG="${GITHUB_SHA::8}"
+          IMAGE_REF="${REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+          echo "registry=${REGISTRY}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "image_ref=${IMAGE_REF}" >> "$GITHUB_OUTPUT"
+          echo "build_timestamp=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+
+      - name: Build container image
+        run: |
+          docker build \
+            --build-arg COMMIT_SHA="${GITHUB_SHA}" \
+            --build-arg BUILD_TIMESTAMP="${{ steps.meta.outputs.build_timestamp }}" \
+            --build-arg APP_VERSION="1.0.0-${GITHUB_SHA::8}" \
+            --tag "${{ steps.meta.outputs.image_ref }}" \
+            --file app/Dockerfile \
+            app/
+
+      - name: Push image to ECR
+        id: push
+        run: |
+          docker push "${{ steps.meta.outputs.image_ref }}"
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "${{ steps.meta.outputs.image_ref }}" | cut -d'@' -f2)
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "Image pushed with digest: ${DIGEST}"
+
+      - name: Verify image exists in registry
+        run: |
+          aws ecr describe-images \
+            --repository-name "${ECR_REPOSITORY}" \
+            --image-ids imageDigest="${{ steps.push.outputs.digest }}" \
+            --region "${AWS_REGION}"
+
+  # ─────────────────────────────────────────
+  # Stage 2: Generate SBOMs (SPDX + CycloneDX)
+  # ─────────────────────────────────────────
+  sbom:
+    name: Generate SBOMs
+    runs-on: ubuntu-latest
+    needs: build
+    outputs:
+      spdx_digest: ${{ steps.upload.outputs.spdx_digest }}
+      cdx_digest: ${{ steps.upload.outputs.cdx_digest }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Install Syft
+        uses: anchore/sbom-action/download-syft@v0
+        with:
+          syft-version: "v1.9.0"
+
+      - name: Generate SPDX SBOM
+        run: |
+          syft "${{ needs.build.outputs.registry }}/${ECR_REPOSITORY}@${{ needs.build.outputs.image_digest }}" \
+            --output spdx-json=sbom-spdx.json \
+            --source-name "supply-chain-demo" \
+            --source-version "${GITHUB_SHA::8}"
+          echo "SPDX SBOM generated:"
+          jq '.name, .documentNamespace, (.packages | length)' sbom-spdx.json
+
+      - name: Generate CycloneDX SBOM
+        run: |
+          syft "${{ needs.build.outputs.registry }}/${ECR_REPOSITORY}@${{ needs.build.outputs.image_digest }}" \
+            --output cyclonedx-json=sbom-cyclonedx.json \
+            --source-name "supply-chain-demo" \
+            --source-version "${GITHUB_SHA::8}"
+          echo "CycloneDX SBOM generated:"
+          jq '.bomFormat, .specVersion, (.components | length)' sbom-cyclonedx.json
+
+      - name: Upload SBOM artifacts
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: sboms
+          path: |
+            sbom-spdx.json
+            sbom-cyclonedx.json
+          retention-days: 30
+
+  # ─────────────────────────────────────────
+  # Stage 3: Vulnerability scan (Grype)
+  # ─────────────────────────────────────────
+  vuln-scan:
+    name: Vulnerability Scan
+    runs-on: ubuntu-latest
+    needs: [build, sbom]
+    steps:
+      - name: Download SBOMs
+        uses: actions/download-artifact@v4
+        with:
+          name: sboms
+
+      - name: Install Grype
+        uses: anchore/scan-action/download-grype@v4
+        with:
+          grype-version: "v0.79.0"
+
+      - name: Scan SPDX SBOM for vulnerabilities
+        run: |
+          echo "Scanning SPDX SBOM for vulnerabilities..."
+          grype sbom:sbom-spdx.json \
+            --output table \
+            --fail-on critical \
+            --add-cpes-if-none
+          echo "SPDX vulnerability scan passed."
+
+      - name: Scan CycloneDX SBOM for vulnerabilities
+        run: |
+          echo "Scanning CycloneDX SBOM for vulnerabilities..."
+          grype sbom:sbom-cyclonedx.json \
+            --output json \
+            --fail-on critical \
+            --add-cpes-if-none > grype-results.json
+          echo "CycloneDX vulnerability scan passed."
+
+          # Summary output
+          TOTAL=$(jq '.matches | length' grype-results.json)
+          CRITICAL=$(jq '[.matches[] | select(.vulnerability.severity == "Critical")] | length' grype-results.json)
+          HIGH=$(jq '[.matches[] | select(.vulnerability.severity == "High")] | length' grype-results.json)
+          echo "Vulnerability summary: ${TOTAL} total, ${CRITICAL} critical, ${HIGH} high"
+
+      - name: Upload scan results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vulnerability-scan
+          path: grype-results.json
+          retention-days: 30
+
+  # ─────────────────────────────────────────
+  # Stage 4: Sign image with cosign (keyless)
+  # ─────────────────────────────────────────
+  sign:
+    name: Sign Image (Sigstore)
+    runs-on: ubuntu-latest
+    needs: [build, vuln-scan]
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: "v2.4.1"
+
+      - name: Sign image with cosign (keyless)
+        env:
+          COSIGN_YES: "true"
+        run: |
+          IMAGE="${{ needs.build.outputs.registry }}/${ECR_REPOSITORY}@${{ needs.build.outputs.image_digest }}"
+          echo "Signing image: ${IMAGE}"
+
+          cosign sign "${IMAGE}" \
+            --oidc-issuer="https://token.actions.githubusercontent.com" \
+            --annotations "repo=${{ github.repository }}" \
+            --annotations "workflow=${{ github.workflow }}" \
+            --annotations "commit=${{ github.sha }}" \
+            --annotations "run_id=${{ github.run_id }}"
+
+          echo "Image signed successfully."
+
+      - name: Verify signature
+        run: |
+          IMAGE="${{ needs.build.outputs.registry }}/${ECR_REPOSITORY}@${{ needs.build.outputs.image_digest }}"
+          echo "Verifying signature for: ${IMAGE}"
+
+          cosign verify "${IMAGE}" \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+            --certificate-identity-regexp="github.com/nfroze/Supply-Chain-Security-Pipeline" | jq .
+
+          echo "Signature verification passed."
+
+  # ─────────────────────────────────────────
+  # Stage 5: Attach SBOM attestation
+  # ─────────────────────────────────────────
+  attest-sbom:
+    name: Attach SBOM Attestation
+    runs-on: ubuntu-latest
+    needs: [build, sbom, sign]
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Download SBOMs
+        uses: actions/download-artifact@v4
+        with:
+          name: sboms
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: "v2.4.1"
+
+      - name: Attach SPDX SBOM as attestation
+        env:
+          COSIGN_YES: "true"
+        run: |
+          IMAGE="${{ needs.build.outputs.registry }}/${ECR_REPOSITORY}@${{ needs.build.outputs.image_digest }}"
+
+          cosign attest "${IMAGE}" \
+            --predicate sbom-spdx.json \
+            --type spdxjson \
+            --oidc-issuer="https://token.actions.githubusercontent.com"
+
+          echo "SPDX SBOM attestation attached."
+
+      - name: Attach CycloneDX SBOM as attestation
+        env:
+          COSIGN_YES: "true"
+        run: |
+          IMAGE="${{ needs.build.outputs.registry }}/${ECR_REPOSITORY}@${{ needs.build.outputs.image_digest }}"
+
+          cosign attest "${IMAGE}" \
+            --predicate sbom-cyclonedx.json \
+            --type cyclonedx \
+            --oidc-issuer="https://token.actions.githubusercontent.com"
+
+          echo "CycloneDX SBOM attestation attached."
+
+      - name: Verify attestations exist
+        run: |
+          IMAGE="${{ needs.build.outputs.registry }}/${ECR_REPOSITORY}@${{ needs.build.outputs.image_digest }}"
+
+          echo "Verifying SPDX attestation..."
+          cosign verify-attestation "${IMAGE}" \
+            --type spdxjson \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+            --certificate-identity-regexp="github.com/nfroze/Supply-Chain-Security-Pipeline" | jq '.payloadType'
+
+          echo "Verifying CycloneDX attestation..."
+          cosign verify-attestation "${IMAGE}" \
+            --type cyclonedx \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+            --certificate-identity-regexp="github.com/nfroze/Supply-Chain-Security-Pipeline" | jq '.payloadType'
+
+          echo "All attestations verified."
