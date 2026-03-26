@@ -170,6 +170,9 @@ jobs:
         with:
           grype-version: "v0.79.0"
 
+      - name: Update Grype vulnerability database
+        run: grype db update
+
       - name: Verify and extract SPDX SBOM
         run: |
           echo "=========================================="
