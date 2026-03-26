@@ -302,3 +302,128 @@ jobs:
             --certificate-identity-regexp="github.com/nfroze/Supply-Chain-Security-Pipeline" | jq '.payloadType'
 
           echo "All attestations verified."
+
+  # ─────────────────────────────────────────
+  # Stage 6: SLSA Provenance Attestation
+  # ─────────────────────────────────────────
+  provenance:
+    name: Generate SLSA Provenance
+    runs-on: ubuntu-latest
+    needs: [build, attest-sbom]
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: "v2.4.1"
+
+      - name: Generate SLSA provenance predicate
+        id: provenance
+        run: |
+          cat > provenance.json << 'PROVENANCE'
+          {
+            "buildDefinition": {
+              "buildType": "https://github.com/nfroze/Supply-Chain-Security-Pipeline/build/v1",
+              "externalParameters": {
+                "repository": "${{ github.repository }}",
+                "ref": "${{ github.ref }}",
+                "workflow": "${{ github.workflow }}"
+              },
+              "internalParameters": {
+                "github": {
+                  "event_name": "${{ github.event_name }}",
+                  "actor": "${{ github.actor }}",
+                  "run_id": "${{ github.run_id }}",
+                  "run_attempt": "${{ github.run_attempt }}"
+                }
+              },
+              "resolvedDependencies": [
+                {
+                  "uri": "git+https://github.com/${{ github.repository }}@${{ github.ref }}",
+                  "digest": {
+                    "sha1": "${{ github.sha }}"
+                  }
+                }
+              ]
+            },
+            "runDetails": {
+              "builder": {
+                "id": "https://github.com/actions/runner"
+              },
+              "metadata": {
+                "invocationId": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}",
+                "startedOn": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+              }
+            }
+          }
+          PROVENANCE
+
+          echo "SLSA provenance predicate generated:"
+          jq . provenance.json
+
+      - name: Attest SLSA provenance to image
+        env:
+          COSIGN_YES: "true"
+        run: |
+          IMAGE="${{ needs.build.outputs.registry }}/${ECR_REPOSITORY}@${{ needs.build.outputs.image_digest }}"
+
+          cosign attest "${IMAGE}" \
+            --predicate provenance.json \
+            --type slsaprovenance \
+            --oidc-issuer="https://token.actions.githubusercontent.com"
+
+          echo "SLSA provenance attestation attached."
+
+      - name: Verify provenance attestation
+        run: |
+          IMAGE="${{ needs.build.outputs.registry }}/${ECR_REPOSITORY}@${{ needs.build.outputs.image_digest }}"
+
+          cosign verify-attestation "${IMAGE}" \
+            --type slsaprovenance \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+            --certificate-identity-regexp="github.com/nfroze/Supply-Chain-Security-Pipeline" | jq '.payloadType'
+
+          echo "SLSA provenance verification passed."
+
+      - name: Upload provenance artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: slsa-provenance
+          path: provenance.json
+          retention-days: 30
+
+  # ─────────────────────────────────────────
+  # Stage 7: Summary
+  # ─────────────────────────────────────────
+  summary:
+    name: Pipeline Summary
+    runs-on: ubuntu-latest
+    needs: [build, sbom, vuln-scan, sign, attest-sbom, provenance]
+    if: always()
+    steps:
+      - name: Generate pipeline summary
+        run: |
+          echo "## Supply Chain Security Pipeline Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Stage | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-------|--------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Build & Push | ${{ needs.build.result }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| SBOM Generation | ${{ needs.sbom.result }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Vulnerability Scan | ${{ needs.vuln-scan.result }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Image Signing | ${{ needs.sign.result }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| SBOM Attestation | ${{ needs.attest-sbom.result }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| SLSA Provenance | ${{ needs.provenance.result }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Image Digest:** \`${{ needs.build.outputs.image_digest }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Image Ref:** \`${{ needs.build.outputs.image_ref }}\`" >> "$GITHUB_STEP_SUMMARY"
