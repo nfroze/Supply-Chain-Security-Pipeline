@@ -1,0 +1,28 @@
+# ─────────────────────────────────────────────────────────────────
+# Test: Deploy an unsigned image (SHOULD BE REJECTED)
+# ─────────────────────────────────────────────────────────────────
+# This manifest deliberately uses an unsigned nginx image to verify
+# that Kyverno policies correctly reject unsigned/unverified images.
+#
+# Expected behaviour:
+#   kubectl apply -f test-unsigned-image.yaml
+#   → Error: admission webhook "mutate.kyverno.svc-fail" denied the request
+#
+# This proves the admission controller is enforcing supply chain
+# security policies — only signed, attested images from our ECR
+# registry are allowed to run.
+# ─────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-unsigned-nginx
+  namespace: supply-chain-demo
+  labels:
+    app: test-unsigned
+    purpose: policy-validation
+spec:
+  containers:
+    - name: nginx
+      image: nginx:latest
+      ports:
+        - containerPort: 80

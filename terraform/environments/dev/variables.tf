@@ -51,3 +51,9 @@ variable "node_instance_types" {
   type        = list(string)
   default     = ["t3.medium"]
 }
+
+variable "kyverno_chart_version" {
+  description = "Kyverno Helm chart version"
+  type        = string
+  default     = "3.2.6"
+}

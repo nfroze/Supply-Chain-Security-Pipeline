@@ -1,0 +1,88 @@
+# ─────────────────────────────────────────────────────────────────
+# Policy: Require Security Context
+# ─────────────────────────────────────────────────────────────────
+# Enforces container hardening standards: non-root execution,
+# read-only root filesystem, no privilege escalation, and all
+# capabilities dropped. Defence in depth — even if an attacker
+# compromises the container, the blast radius is minimised.
+# ─────────────────────────────────────────────────────────────────
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-security-context
+  annotations:
+    policies.kyverno.io/title: Require Security Context Hardening
+    policies.kyverno.io/category: Pod Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Enforces container security best practices: non-root execution,
+      read-only root filesystem, no privilege escalation, and all
+      capabilities dropped.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: require-run-as-non-root
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - supply-chain-demo
+      validate:
+        message: "Containers must run as non-root (runAsNonRoot: true required)."
+        pattern:
+          spec:
+            securityContext:
+              runAsNonRoot: true
+
+    - name: require-read-only-rootfs
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - supply-chain-demo
+      validate:
+        message: "Containers must use a read-only root filesystem."
+        pattern:
+          spec:
+            containers:
+              - securityContext:
+                  readOnlyRootFilesystem: true
+
+    - name: deny-privilege-escalation
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - supply-chain-demo
+      validate:
+        message: "Containers must not allow privilege escalation."
+        pattern:
+          spec:
+            containers:
+              - securityContext:
+                  allowPrivilegeEscalation: false
+
+    - name: drop-all-capabilities
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - supply-chain-demo
+      validate:
+        message: "Containers must drop ALL capabilities."
+        deny:
+          conditions:
+            all:
+              - key: "{{ request.object.spec.containers[].securityContext.capabilities.drop[] | length(@) }}"
+                operator: Equals
+                value: 0

@@ -1,0 +1,42 @@
+# ─────────────────────────────────────────────────────────────────
+# Policy: Restrict Image Registries
+# ─────────────────────────────────────────────────────────────────
+# Only allows images from our ECR registry in the application
+# namespace. Prevents pulling from Docker Hub, GHCR, or any
+# untrusted registry — reducing the attack surface for image
+# substitution attacks.
+# ─────────────────────────────────────────────────────────────────
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-image-registries
+  annotations:
+    policies.kyverno.io/title: Restrict Image Registries
+    policies.kyverno.io/category: Supply Chain Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Restricts container images in the supply-chain-demo namespace
+      to only those from the approved ECR registry. Prevents image
+      substitution attacks by blocking pulls from untrusted registries.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: validate-registry
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - supply-chain-demo
+      validate:
+        message: >-
+          Images must be pulled from the approved ECR registry
+          (*.dkr.ecr.*.amazonaws.com/supply-chain-sec-*).
+          Image '{{ request.object.spec.containers[].image }}' is not from an approved registry.
+        pattern:
+          spec:
+            containers:
+              - image: "*.dkr.ecr.*.amazonaws.com/supply-chain-sec-*"

@@ -1,0 +1,51 @@
+# ─────────────────────────────────────────────────────────────────
+# Policy: Verify Image Signature
+# ─────────────────────────────────────────────────────────────────
+# Rejects any pod whose container image is not signed with cosign
+# via Sigstore keyless signing (GitHub Actions OIDC identity).
+#
+# This is the first gate in the verification chain. If the image
+# is not signed by the expected identity, it never reaches the
+# provenance or SBOM checks.
+#
+# failurePolicy: Fail — unsigned images are rejected, not audited.
+# ─────────────────────────────────────────────────────────────────
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-image-signature
+  annotations:
+    policies.kyverno.io/title: Verify Image Signature (Sigstore Keyless)
+    policies.kyverno.io/category: Supply Chain Security
+    policies.kyverno.io/severity: critical
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Verifies that all container images in the supply-chain-demo namespace
+      are signed using Sigstore cosign keyless signing with a GitHub Actions
+      OIDC identity. Unsigned or incorrectly signed images are rejected.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  webhookTimeoutSeconds: 30
+  rules:
+    - name: verify-cosign-signature
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - supply-chain-demo
+      verifyImages:
+        - imageReferences:
+            - "*.dkr.ecr.*.amazonaws.com/supply-chain-sec-*"
+          attestors:
+            - entries:
+                - keyless:
+                    issuer: "https://token.actions.githubusercontent.com"
+                    subject: "https://github.com/nfroze/Supply-Chain-Security-Pipeline/*"
+                    rekor:
+                      url: "https://rekor.sigstore.dev"
+          mutateDigest: true
+          verifyDigest: true
+          required: true

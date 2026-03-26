@@ -103,3 +103,14 @@ module "ecr" {
   project_name = var.project_name
   environment  = var.environment
 }
+
+module "kyverno" {
+  source = "../../modules/kyverno"
+
+  project_name          = var.project_name
+  environment           = var.environment
+  kyverno_chart_version = var.kyverno_chart_version
+  kyverno_irsa_role_arn = module.eks.kyverno_irsa_role_arn
+
+  depends_on = [module.eks]
+}

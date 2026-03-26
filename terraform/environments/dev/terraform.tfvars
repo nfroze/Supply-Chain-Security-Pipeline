@@ -6,4 +6,5 @@ eks_cluster_version = "1.30"
 node_desired_size   = 2
 node_min_size       = 1
 node_max_size       = 3
-node_instance_types = ["t3.medium"]
+node_instance_types   = ["t3.medium"]
+kyverno_chart_version = "3.2.6"

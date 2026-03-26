@@ -1,0 +1,61 @@
+# ─────────────────────────────────────────────────────────────────
+# Policy: Verify SBOM Attestation
+# ─────────────────────────────────────────────────────────────────
+# Requires a valid SBOM attestation (CycloneDX) on every container
+# image. This proves an SBOM was generated during the build and
+# signed by the CI pipeline.
+#
+# This is the third gate: the image must be signed, have provenance,
+# AND have an SBOM attached as a signed attestation.
+# ─────────────────────────────────────────────────────────────────
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-sbom-attestation
+  annotations:
+    policies.kyverno.io/title: Verify SBOM Attestation
+    policies.kyverno.io/category: Supply Chain Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Verifies that container images have a valid CycloneDX SBOM
+      attestation signed by the expected GitHub Actions OIDC identity.
+      Images without SBOM attestations are rejected.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  webhookTimeoutSeconds: 30
+  rules:
+    - name: verify-sbom
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - supply-chain-demo
+      verifyImages:
+        - imageReferences:
+            - "*.dkr.ecr.*.amazonaws.com/supply-chain-sec-*"
+          attestations:
+            - type: cyclonedx
+              attestors:
+                - entries:
+                    - keyless:
+                        issuer: "https://token.actions.githubusercontent.com"
+                        subject: "https://github.com/nfroze/Supply-Chain-Security-Pipeline/*"
+                        rekor:
+                          url: "https://rekor.sigstore.dev"
+              conditions:
+                - all:
+                    # Verify the SBOM is in CycloneDX format
+                    - key: "{{ bomFormat }}"
+                      operator: Equals
+                      value: "CycloneDX"
+                    # Verify the SBOM contains at least one component
+                    - key: "{{ components[0].name }}"
+                      operator: NotEquals
+                      value: ""
+          mutateDigest: true
+          verifyDigest: true
+          required: true

@@ -43,6 +43,16 @@ output "kyverno_irsa_role_arn" {
   value       = module.eks.kyverno_irsa_role_arn
 }
 
+output "kyverno_namespace" {
+  description = "Namespace where Kyverno is installed"
+  value       = module.kyverno.kyverno_namespace
+}
+
+output "kyverno_chart_version" {
+  description = "Kyverno Helm chart version"
+  value       = module.kyverno.kyverno_chart_version
+}
+
 output "kubeconfig_command" {
   description = "Command to update kubeconfig"
   value       = "aws eks update-kubeconfig --region ${var.aws_region} --name ${module.eks.cluster_name}"

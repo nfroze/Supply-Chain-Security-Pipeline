@@ -1,0 +1,60 @@
+# ─────────────────────────────────────────────────────────────────
+# Policy: Verify SLSA Provenance
+# ─────────────────────────────────────────────────────────────────
+# Requires a valid SLSA provenance attestation on every container
+# image. Verifies the attestation signature was produced by the
+# expected GitHub Actions identity, confirming the image was built
+# by our CI pipeline — not by an arbitrary third party.
+#
+# This is the second gate: even if an image is signed, it must
+# also have provenance proving it came from the expected build
+# system and source repository.
+# ─────────────────────────────────────────────────────────────────
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-slsa-provenance
+  annotations:
+    policies.kyverno.io/title: Verify SLSA Provenance Attestation
+    policies.kyverno.io/category: Supply Chain Security
+    policies.kyverno.io/severity: critical
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Verifies that container images have a valid SLSA provenance
+      attestation signed by the expected GitHub Actions OIDC identity.
+      Images without provenance or with provenance from unexpected
+      sources are rejected.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  webhookTimeoutSeconds: 30
+  rules:
+    - name: verify-provenance-attestation
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - supply-chain-demo
+      verifyImages:
+        - imageReferences:
+            - "*.dkr.ecr.*.amazonaws.com/supply-chain-sec-*"
+          attestations:
+            - type: slsaprovenance
+              attestors:
+                - entries:
+                    - keyless:
+                        issuer: "https://token.actions.githubusercontent.com"
+                        subject: "https://github.com/nfroze/Supply-Chain-Security-Pipeline/*"
+                        rekor:
+                          url: "https://rekor.sigstore.dev"
+              conditions:
+                - all:
+                    # Verify the build came from our repository
+                    - key: "{{ buildDefinition.externalParameters.repository }}"
+                      operator: Equals
+                      value: "nfroze/Supply-Chain-Security-Pipeline"
+          mutateDigest: true
+          verifyDigest: true
+          required: true
