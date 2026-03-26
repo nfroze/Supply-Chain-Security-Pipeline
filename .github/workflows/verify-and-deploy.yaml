@@ -55,11 +55,11 @@ jobs:
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             DIGEST="${{ inputs.image_digest }}"
           else
-            # Get the latest tagged image (excludes .sig/.att signature artifacts)
+            # Get the latest application image — exclude cosign artifacts (.sig, .att tags)
             DIGEST=$(aws ecr describe-images \
               --repository-name "${ECR_REPOSITORY}" \
-              --query 'sort_by(imageDetails[?imageTags],& imagePushedAt)[-1].imageDigest' \
-              --output text)
+              --output json \
+              | jq -r '[.imageDetails[] | select(.imageTags != null) | select(.imageTags[] | test("\\.(sig|att)$") | not)] | sort_by(.imagePushedAt) | last | .imageDigest')
           fi
 
           IMAGE="${REGISTRY}/${ECR_REPOSITORY}@${DIGEST}"
