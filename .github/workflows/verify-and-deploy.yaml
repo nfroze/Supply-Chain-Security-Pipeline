@@ -171,7 +171,7 @@ jobs:
       - name: Install Grype
         uses: anchore/scan-action/download-grype@v4
         with:
-          grype-version: "v0.79.0"
+          grype-version: "v0.88.0"
 
       - name: Update Grype vulnerability database
         run: |
