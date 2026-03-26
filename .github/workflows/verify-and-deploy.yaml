@@ -150,6 +150,9 @@ jobs:
     name: Verify SBOMs
     runs-on: ubuntu-latest
     needs: [resolve, verify-provenance]
+    env:
+      GRYPE_DB_AUTO_UPDATE: "true"
+      GRYPE_DB_MAX_ALLOWED_BUILT_AGE: "120h"
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -171,7 +174,10 @@ jobs:
           grype-version: "v0.79.0"
 
       - name: Update Grype vulnerability database
-        run: grype db update
+        run: |
+          grype db delete || true
+          grype db update
+          grype db status
 
       - name: Verify and extract SPDX SBOM
         run: |
