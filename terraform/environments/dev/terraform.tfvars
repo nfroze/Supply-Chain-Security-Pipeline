@@ -1,0 +1,9 @@
+aws_region          = "eu-west-2"
+project_name        = "supply-chain-sec"
+environment         = "dev"
+vpc_cidr            = "10.0.0.0/16"
+eks_cluster_version = "1.30"
+node_desired_size   = 2
+node_min_size       = 1
+node_max_size       = 3
+node_instance_types = ["t3.medium"]
