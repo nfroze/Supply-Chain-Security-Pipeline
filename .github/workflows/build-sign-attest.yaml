@@ -340,43 +340,48 @@ jobs:
       - name: Generate SLSA provenance predicate
         id: provenance
         run: |
-          cat > provenance.json << 'PROVENANCE'
+          cat > provenance.json << EOF
           {
-            "buildDefinition": {
-              "buildType": "https://github.com/nfroze/Supply-Chain-Security-Pipeline/build/v1",
-              "externalParameters": {
-                "repository": "${{ github.repository }}",
-                "ref": "${{ github.ref }}",
-                "workflow": "${{ github.workflow }}"
-              },
-              "internalParameters": {
-                "github": {
-                  "event_name": "${{ github.event_name }}",
-                  "actor": "${{ github.actor }}",
-                  "run_id": "${{ github.run_id }}",
-                  "run_attempt": "${{ github.run_attempt }}"
-                }
-              },
-              "resolvedDependencies": [
-                {
-                  "uri": "git+https://github.com/${{ github.repository }}@${{ github.ref }}",
-                  "digest": {
-                    "sha1": "${{ github.sha }}"
-                  }
-                }
-              ]
+            "builder": {
+              "id": "https://github.com/actions/runner"
             },
-            "runDetails": {
-              "builder": {
-                "id": "https://github.com/actions/runner"
+            "buildType": "https://github.com/nfroze/Supply-Chain-Security-Pipeline/build/v1",
+            "invocation": {
+              "configSource": {
+                "uri": "git+https://github.com/${{ github.repository }}@${{ github.ref }}",
+                "digest": {
+                  "sha1": "${{ github.sha }}"
+                },
+                "entryPoint": "${{ github.workflow }}"
               },
-              "metadata": {
-                "invocationId": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}",
-                "startedOn": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+              "parameters": {},
+              "environment": {
+                "github_actor": "${{ github.actor }}",
+                "github_event_name": "${{ github.event_name }}",
+                "github_run_id": "${{ github.run_id }}",
+                "github_run_attempt": "${{ github.run_attempt }}"
               }
-            }
+            },
+            "metadata": {
+              "buildInvocationId": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}",
+              "buildStartedOn": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')",
+              "completeness": {
+                "parameters": true,
+                "environment": true,
+                "materials": true
+              },
+              "reproducible": false
+            },
+            "materials": [
+              {
+                "uri": "git+https://github.com/${{ github.repository }}@${{ github.ref }}",
+                "digest": {
+                  "sha1": "${{ github.sha }}"
+                }
+              }
+            ]
           }
-          PROVENANCE
+          EOF
 
           echo "SLSA provenance predicate generated:"
           jq . provenance.json
