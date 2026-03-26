@@ -11,9 +11,8 @@ override.tf.json
 *.tfplan
 tfplan
 
-# Build brief and setup scripts — never commit
+# Build brief — never commit
 CLAUDE.md
-scripts/
 
 # OS
 .DS_Store
@@ -24,6 +23,9 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Dependencies
+node_modules/
 
 # Environment
 .env
