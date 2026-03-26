@@ -55,10 +55,10 @@ jobs:
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             DIGEST="${{ inputs.image_digest }}"
           else
-            # Get the latest image pushed to the repository
+            # Get the latest tagged image (excludes .sig/.att signature artifacts)
             DIGEST=$(aws ecr describe-images \
               --repository-name "${ECR_REPOSITORY}" \
-              --query 'sort_by(imageDetails,& imagePushedAt)[-1].imageDigest' \
+              --query 'sort_by(imageDetails[?imageTags],& imagePushedAt)[-1].imageDigest' \
               --output text)
           fi
 
@@ -89,6 +89,13 @@ jobs:
         with:
           cosign-release: "v2.4.1"
 
+      - name: Debug — list ECR images
+        run: |
+          aws ecr describe-images \
+            --repository-name "${ECR_REPOSITORY}" \
+            --query 'imageDetails[?imageTags].{Tags:imageTags,Digest:imageDigest,Pushed:imagePushedAt}' \
+            --output table
+
       - name: Verify cosign signature
         run: |
           echo "=========================================="
@@ -97,11 +104,11 @@ jobs:
           echo "Image: ${{ needs.resolve.outputs.image }}"
           echo ""
 
-          RESULT=$(cosign verify "${{ needs.resolve.outputs.image }}" \
+          cosign verify "${{ needs.resolve.outputs.image }}" \
             --certificate-oidc-issuer="${OIDC_ISSUER}" \
-            --certificate-identity-regexp="${IDENTITY_REGEXP}" 2>&1)
+            --certificate-identity-regexp="${IDENTITY_REGEXP}" \
+            --output text
 
-          echo "${RESULT}" | jq .
           echo ""
           echo "SIGNATURE VERIFICATION: PASSED"
 
@@ -133,13 +140,12 @@ jobs:
           echo "STEP 2/5: Provenance Verification"
           echo "=========================================="
 
-          RESULT=$(cosign verify-attestation "${{ needs.resolve.outputs.image }}" \
+          cosign verify-attestation "${{ needs.resolve.outputs.image }}" \
             --type slsaprovenance \
             --certificate-oidc-issuer="${OIDC_ISSUER}" \
-            --certificate-identity-regexp="${IDENTITY_REGEXP}" 2>&1)
+            --certificate-identity-regexp="${IDENTITY_REGEXP}" \
+            | jq -r '.payload' | base64 -d | jq '.predicate'
 
-          # Extract and display provenance details
-          echo "${RESULT}" | jq -r '.payload' | base64 -d | jq '.predicate'
           echo ""
           echo "PROVENANCE VERIFICATION: PASSED"
 
