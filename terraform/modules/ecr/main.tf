@@ -4,7 +4,11 @@
 
 resource "aws_ecr_repository" "app" {
   name                 = "${var.project_name}-${var.environment}-app"
-  image_tag_mutability = "IMMUTABLE"
+  # Mutable tags required — cosign stores signatures and attestations as
+  # OCI artifacts with .sig and .att tag suffixes. Immutable tags prevent
+  # re-signing on retries and block attestation attachment. Image integrity
+  # is enforced via digest pinning throughout the pipeline, not tag immutability.
+  image_tag_mutability = "MUTABLE"
   force_delete         = true
 
   image_scanning_configuration {
