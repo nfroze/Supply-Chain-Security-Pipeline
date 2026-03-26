@@ -224,7 +224,7 @@ jobs:
           cosign sign "${IMAGE}" \
             --oidc-issuer="https://token.actions.githubusercontent.com" \
             --annotations "repo=${{ github.repository }}" \
-            --annotations "workflow=${{ github.workflow }}" \
+            --annotations "workflow=build-sign-attest" \
             --annotations "commit=${{ github.sha }}" \
             --annotations "run_id=${{ github.run_id }}"
 
