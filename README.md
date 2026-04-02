@@ -4,7 +4,7 @@ A complete CI/CD pipeline that implements software supply chain security control
 
 ## Overview
 
-Regulatory pressure around software supply chain security is accelerating. The EU Cyber Resilience Act now requires machine-readable SBOMs for any software sold in the EU. CISA's 2025 updated minimum elements expand required metadata for provenance and authenticity. NIST SP 800-218 recommends SBOM generation and artifact signing as standard practice. Organisations that can't prove what's inside their software, who built it, and whether it's been tampered with are increasingly exposed — both to attackers and to regulators.
+Regulatory pressure around software supply chain security is accelerating. The EU Cyber Resilience Act will require machine-readable SBOMs for software placed on the EU market from December 2027, with vulnerability reporting obligations starting September 2026. CISA's 2025 updated minimum elements expand required metadata for provenance and authenticity. NIST SP 800-218 recommends SBOM generation and artifact signing as standard practice. Organisations that can't prove what's inside their software, who built it, and whether it's been tampered with are increasingly exposed — both to attackers and to regulators.
 
 This project implements the full verification chain from source to deployment. A GitHub Actions build pipeline generates SBOMs in both SPDX and CycloneDX formats using Syft, scans them for vulnerabilities with Grype, signs the container image using Sigstore cosign (keyless, via GitHub Actions OIDC identity), and attaches SLSA provenance attestations. A separate verification pipeline then re-validates every attestation before deploying to EKS. On the cluster side, five Kyverno admission control policies enforce that only images which pass the complete chain — signature verification, provenance check, SBOM attestation, registry restriction, and container hardening — are allowed to run.
 
@@ -76,7 +76,7 @@ Infrastructure is provisioned with Terraform using a modular structure (VPC, EKS
 
 **Running Pods** — Two application replicas running in the supply-chain-demo namespace on private subnet nodes, deployed with the verified image digest.
 
-![](screenshots/pods-running.png)
+![](screenshots/cluster-pods.png)
 
 **Supply Chain Status Endpoint** — Application /supply-chain/status response showing build provenance metadata (image digest, commit SHA, build timestamp, SLSA level 2) and attestation status (signed, SBOM attached, provenance attached — all true).
 
@@ -84,7 +84,7 @@ Infrastructure is provisioned with Terraform using a modular structure (VPC, EKS
 
 **Unsigned Image Rejected** — Kyverno admission webhook rejecting an unsigned nginx:latest image, blocking on multiple policies: require-security-context (non-root, read-only rootfs, no privilege escalation, drop all capabilities) and restrict-image-registries (not from approved ECR registry).
 
-![](screenshots/unsigned-image-rejected.png)
+![](screenshots/kyverno-policy-enforcement.png)
 
 ## Author
 
