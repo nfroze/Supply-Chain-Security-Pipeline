@@ -12,8 +12,6 @@ This project complements my [End-to-End DevSecOps Pipeline](https://github.com/n
 
 ## Architecture
 
-![](screenshots/cloud-architecture.png)
-
 The pipeline runs as two sequential GitHub Actions workflows. The build workflow compiles the application, pushes to Amazon ECR, generates dual-format SBOMs via Syft, gates on Grype vulnerability scan results, signs the image with cosign keyless signing (recording the signature in Sigstore's Rekor transparency log), and attaches SBOM and SLSA provenance attestations to the image in ECR as OCI artifacts. The verify workflow triggers on build completion and re-validates the entire chain — signature, provenance, SBOMs, and a fresh vulnerability re-scan against the latest CVE data — before deploying the verified image digest to EKS.
 
 On the cluster, Kyverno acts as the Kubernetes admission controller. Five ClusterPolicies in enforce mode intercept every pod creation in the application namespace. The image must be signed by the expected GitHub Actions OIDC identity, carry a valid SLSA provenance attestation from the correct source repository, have a CycloneDX SBOM attestation attached, originate from the approved ECR registry, and meet container hardening standards (non-root, read-only rootfs, no privilege escalation, all capabilities dropped). If any check fails, the pod is rejected. An unsigned nginx image deployed to the namespace is blocked at admission — proving the policies work.
